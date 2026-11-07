@@ -25,6 +25,21 @@
     $("#order").textContent = c.priority.join(" → ");
     $("#worst").textContent = c.worst_mistake;
 
+    $("#version").textContent = "기준 version " + c.version;
+
+    // 나올 수 있는 답 — 칸은 기준 순서대로
+    $("#legend-cat").innerHTML = c.priority.map(chip).join(" ");
+    $("#legend-urg").innerHTML = c.urgency.levels.map(chip).join(" ");
+
+    // 🎲 누를 때마다 연습용 문장 하나 (같은 문장이 연달아 나오지 않게)
+    let last = -1;
+    $("#btn-random").addEventListener("click", () => {
+      let i;
+      do { i = Math.floor(Math.random() * p.length); } while (p.length > 1 && i === last);
+      last = i;
+      $("#input").value = p[i].text; $("#input").focus();
+    });
+
     // 예시 문장 버튼
     $("#examples").innerHTML = p.filter(r => EXAMPLES.includes(r.id))
       .map(r => `<button type="button" class="ex">${esc(r.text)}</button>`).join("");
