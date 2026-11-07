@@ -20,7 +20,7 @@ MODEL = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-3.5-flash-lite"
 MODELS = list(dict.fromkeys([MODEL, "gemini-3.8-flash", "gemini-3.5-flash-lite"]))
 BUSY = (429, 500, 503)
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-TIMEOUT = 60
+TIMEOUT = 25    # 모델 하나를 기다리는 시간 — 넘으면 다음 모델로
 MAX_TEXTS = 10   # 한 번에 받는 문장 수 — 주소가 퍼졌을 때 한도가 새는 것을 줄인다
 MAX_LEN = 500    # 문장당 글자 수
 
@@ -77,6 +77,9 @@ def call_gemini(key, prompt):
                     raise
                 if attempt == 0:
                     time.sleep(2)
+            except (TimeoutError, OSError) as e:  # 답이 안 오면 기다리지 않고 다음 모델로
+                last = e
+                break
     raise last
 
 
@@ -123,5 +126,7 @@ class handler(BaseHTTPRequestHandler):
             why = {404: "모델 이름이 없습니다", 400: "열쇠나 요청이 틀렸습니다", 403: "열쇠가 막혔습니다",
                    429: "무료 한도를 넘었습니다 — 잠시 뒤", 503: "Google이 바쁩니다 — 1~2분 뒤 다시"}.get(e.code, "모델 이름 · 한도를 확인")
             return self._send({"results": None, "reason": f"AI 호출 실패 ({e.code}) — {why} · 시도한 모델 {', '.join(MODELS)}"})
+        except (TimeoutError, OSError) as e:
+            return self._send({"results": None, "reason": f"AI가 {TIMEOUT}초 안에 답하지 않았습니다 ({type(e).__name__}) · 시도한 모델 {', '.join(MODELS)}"})
         except Exception as e:  # noqa: BLE001
-            return self._send({"results": None, "reason": f"AI 호출 실패 — {type(e).__name__}"})
+            return self._send({"results": None, "reason": f"AI 호출 실패 — {type(e).__name__} · 시도한 모델 {', '.join(MODELS)}"})
