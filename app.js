@@ -38,6 +38,7 @@
       do { i = Math.floor(Math.random() * p.length); } while (p.length > 1 && i === last);
       last = i;
       $("#input").value = p[i].text; $("#input").focus();
+      toast("예시 문장을 넣었어요");
     });
 
     // 예시 문장 버튼
@@ -75,6 +76,15 @@
   }
 
   // 가장 나쁜 실수 칸 · 높음은 빨간 칩
+  // 아래에 잠깐 뜨는 알림
+  let toastT;
+  function toast(msg) {
+    $("#toast-text").textContent = msg;
+    $("#toast").classList.add("show");
+    clearTimeout(toastT);
+    toastT = setTimeout(() => $("#toast").classList.remove("show"), 2200);
+  }
+
   function chip(text) {
     const hot = text === S.criteria.priority[0] || text === "높음";
     return `<span class="chip${hot ? " hot" : ""}">${esc(text)}</span>`;
@@ -102,12 +112,14 @@
       $("#chip-cat").innerHTML = chip(got.category);
       $("#chip-urg").innerHTML = chip(got.urgency);
       $("#reason").textContent = got.reason || "";
+      toast(`AI가 갈랐어요 · ${got.category} · ${got.urgency}`);
     } else {
       const res = Rules.classify(m.masked, S.criteria, S.keywords);
       $("#by").textContent = `AI 없이 규칙으로 갈랐습니다 — ${ai.reason || "AI 답 없음"}`;
       $("#chip-cat").innerHTML = chip(res.category);
       $("#chip-urg").innerHTML = chip(res.urgency);
       $("#reason").textContent = res.reason;
+      toast(`AI 없이 규칙으로 갈랐어요 · ${res.category} · ${res.urgency}`);
     }
     btn.disabled = false; btn.textContent = "분류하기";
   });
