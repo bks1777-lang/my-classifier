@@ -10,11 +10,15 @@
 """
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler
 
 MODEL = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-3.5-flash-lite"
+# 바쁠 때(503·429) 차례로 물어볼 모델 — 답한 모델 이름은 결과에 그대로 적힌다
+MODELS = list(dict.fromkeys([MODEL, "gemini-3.8-flash", "gemini-3.5-flash-lite"]))
+BUSY = (429, 500, 503)
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 TIMEOUT = 60
 MAX_TEXTS = 10   # 한 번에 받는 문장 수 — 주소가 퍼졌을 때 한도가 새는 것을 줄인다
@@ -47,17 +51,33 @@ def build_prompt(texts, crit):
 """
 
 
-def call_gemini(key, prompt):
-    body = json.dumps({
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
-    }).encode("utf-8")
+def call_one(key, model, body):
     req = urllib.request.Request(
-        ENDPOINT.format(model=MODEL), data=body, method="POST",
+        ENDPOINT.format(model=model), data=body, method="POST",
         headers={"Content-Type": "application/json", "x-goog-api-key": key})
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
         data = json.loads(r.read().decode("utf-8"))
     return json.loads(data["candidates"][0]["content"]["parts"][0]["text"])
+
+
+def call_gemini(key, prompt):
+    """(답, 답한 모델) 을 돌려준다. 바쁘면 2초 쉬고 한 번 더, 그래도 바쁘면 다음 모델."""
+    body = json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
+    }).encode("utf-8")
+    last = None
+    for model in MODELS:
+        for attempt in range(2):
+            try:
+                return call_one(key, model, body), model
+            except urllib.error.HTTPError as e:
+                last = e
+                if e.code not in BUSY:
+                    raise
+                if attempt == 0:
+                    time.sleep(2)
+    raise last
 
 
 def clean(items, n, cats):
@@ -87,6 +107,8 @@ class handler(BaseHTTPRequestHandler):
         key = os.environ.get("GEMINI_API_KEY", "").strip()
         if not key:
             return self._send({"results": None, "reason": "열쇠가 없습니다 — Vercel 환경 변수 GEMINI_API_KEY"})
+        if not key.isascii() or not MODEL.isascii():
+            return self._send({"results": None, "reason": "열쇠나 모델 이름에 한글·빈칸 같은 엉뚱한 글자가 있습니다 — 값을 다시 붙여넣기"})
         try:
             n = int(self.headers.get("Content-Length", "0"))
             req = json.loads(self.rfile.read(min(n, 60000)).decode("utf-8"))
@@ -95,9 +117,11 @@ class handler(BaseHTTPRequestHandler):
             cats = [c.get("name") for c in crit.get("categories", []) if isinstance(c, dict)]
             if not texts or not cats:
                 return self._send({"results": None, "reason": "보낸 문장이나 기준이 없습니다"})
-            items = call_gemini(key, build_prompt(texts, crit))
-            return self._send({"results": clean(items, len(texts), cats), "model": MODEL})
+            items, used = call_gemini(key, build_prompt(texts, crit))
+            return self._send({"results": clean(items, len(texts), cats), "model": used})
         except urllib.error.HTTPError as e:
-            return self._send({"results": None, "reason": f"AI 호출 실패 ({e.code}) — 모델 이름 · 한도를 확인"})
+            why = {404: "모델 이름이 없습니다", 400: "열쇠나 요청이 틀렸습니다", 403: "열쇠가 막혔습니다",
+                   429: "무료 한도를 넘었습니다 — 잠시 뒤", 503: "Google이 바쁩니다 — 1~2분 뒤 다시"}.get(e.code, "모델 이름 · 한도를 확인")
+            return self._send({"results": None, "reason": f"AI 호출 실패 ({e.code}) — {why} · 시도한 모델 {', '.join(MODELS)}"})
         except Exception as e:  # noqa: BLE001
             return self._send({"results": None, "reason": f"AI 호출 실패 — {type(e).__name__}"})
