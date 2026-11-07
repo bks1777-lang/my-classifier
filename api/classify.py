@@ -20,7 +20,7 @@ MODEL = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-3.5-flash-lite"
 MODELS = list(dict.fromkeys([MODEL, "gemini-3.8-flash", "gemini-3.5-flash-lite"]))
 BUSY = (429, 500, 503)
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-TIMEOUT = 25    # 모델 하나를 기다리는 시간 — 넘으면 다음 모델로
+TIMEOUT = 45    # 모델 하나를 기다리는 시간 — 넘으면 다음 모델로
 MAX_TEXTS = 10   # 한 번에 받는 문장 수 — 주소가 퍼졌을 때 한도가 새는 것을 줄인다
 MAX_LEN = 500    # 문장당 글자 수
 

@@ -105,6 +105,7 @@
     $("#score-msg").hidden = true;
     const masked = S.answer.map(r => Mask.mask(r.text).masked);
     const results = [];
+    const used = [];  // 묶음마다 답한 모델 — 섞이면 다 적는다
     for (let i = 0; i < masked.length; i += BATCH) {
       btn.textContent = `AI 채점 중… ${i}/${masked.length}`;
       const r = await askAI(masked.slice(i, i + BATCH));
@@ -114,11 +115,12 @@
         btn.disabled = false; btn.textContent = "AI로 채점";
         return;
       }
-      S.aiModel = r.model || S.aiModel;
+      if (r.model && !used.includes(r.model)) used.push(r.model);
       for (let j = 0; j < Math.min(BATCH, masked.length - i); j++) results.push(r.results[j] || null);
     }
     // 답을 못 받은 문장은 오답으로 센다 — 빼고 세면 점수가 부풀려진다
     const miss = { category: "-", urgency: "-" };
+    S.aiModel = used.join(" + ") + (used.length > 1 ? " (섞임)" : "");
     S.aiResults = results;
     const s = Rules.score(S.answer, (r, i) => results[i] || miss, S.criteria.priority[0]);
     showScore("ai", s, `AI · ${S.aiModel}`);
